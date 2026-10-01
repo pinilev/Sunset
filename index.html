@@ -140,11 +140,11 @@
                 <!-- Glowing background orbital -->
                 <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-gradient-to-b from-amber-400 to-sunset-600 rounded-full blur-3xl opacity-20 pointer-events-none animate-pulse-glow"></div>
 
-                <!-- Sun Visual Element -->
-                <div class="flex justify-center mb-6">
-                    <div class="relative flex items-center justify-center w-24 h-24">
+                <!-- Sun Visual Element (Smaller icon size) -->
+                <div class="flex justify-center mb-4">
+                    <div class="relative flex items-center justify-center w-16 h-16">
                         <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-sunset-600 via-amber-400 to-amber-200 sun-glow animate-pulse-glow"></div>
-                        <i data-lucide="sunset" class="w-12 h-12 text-white z-10 animate-float"></i>
+                        <i data-lucide="sunset" class="w-8 h-8 text-white z-10 animate-float"></i>
                     </div>
                 </div>
 
@@ -166,16 +166,20 @@
 
             <!-- Solar Cycle Progress Card -->
             <div class="glass-panel rounded-2xl p-5 space-y-4">
-                <div class="flex items-center justify-between text-sm text-gray-300">
-                    <div class="flex items-center gap-2">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs sm:text-sm text-gray-300">
+                    <div class="flex items-center justify-center gap-1.5">
                         <i data-lucide="sunrise" class="w-4 h-4 text-amber-300"></i>
                         <span>זריחה: <strong id="sunriseTime" class="text-white font-mono">--:--</strong></span>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center justify-center gap-1.5">
                         <i data-lucide="sun" class="w-4 h-4 text-amber-400"></i>
-                        <span>חצות היום: <strong id="noonTime" class="text-white font-mono">--:--</strong></span>
+                        <span>חצות: <strong id="noonTime" class="text-white font-mono">--:--</strong></span>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="clock-4" class="w-4 h-4 text-orange-400"></i>
+                        <span>מנחה גדולה: <strong id="minchaGedolaTime" class="text-white font-mono">--:--</strong></span>
+                    </div>
+                    <div class="flex items-center justify-center gap-1.5">
                         <i data-lucide="sunset" class="w-4 h-4 text-sunset-400"></i>
                         <span>שקיעה: <strong id="sunsetTimeSmall" class="text-white font-mono">--:--</strong></span>
                     </div>
@@ -401,11 +405,16 @@
             const tDusk = N + ((18.5 - lngHour) / 24);
             const duskTime = computeTimeForSolarZenith(tDusk, lat, lng, N, 96.0, false, date);
 
-            // Solar Noon calculation
+            // Solar Noon & Mincha Gedola calculation
             let solarNoon = null;
+            let minchaGedola = null;
             if (sunTimesRise && sunTimesSet) {
                 const diff = (sunTimesSet.getTime() - sunTimesRise.getTime()) / 2;
                 solarNoon = new Date(sunTimesRise.getTime() + diff);
+
+                // Mincha Gedola = Solar Noon + 0.5 Sha'ah Zmanit (Proportional Hour)
+                const shaahZmanitMs = (sunTimesSet.getTime() - sunTimesRise.getTime()) / 12;
+                minchaGedola = new Date(solarNoon.getTime() + (0.5 * shaahZmanitMs));
             }
 
             // Sunset Azimuth estimation
@@ -415,13 +424,14 @@
             const radDec = declination * (Math.PI / 180);
             const cosAzimuth = -Math.sin(radDec) / Math.cos(radLat);
             let azimuth = 270 + Math.round(Math.asin(Math.max(-1, Math.min(1, cosAzimuth))) * (180 / Math.PI));
-            if (isNaN(azimuth) || azimuth < 240 || azimuth > 300) azimuth = 289; // Default Jerusalem approx
+            if (isNaN(azimuth) || azimuth < 240 || azimuth > 300) azimuth = 289;
 
             return {
                 sunrise: sunTimesRise,
                 sunset: sunTimesSet,
                 dusk: duskTime,
                 solarNoon: solarNoon,
+                minchaGedola: minchaGedola,
                 azimuth: azimuth
             };
         }
@@ -509,7 +519,8 @@
             const dd = String(date.getDate()).padStart(2, '0');
             document.getElementById('datePicker').value = `${yyyy}-${mm}-${dd}`;
 
-            return `${gregorianStr} • ${hebrewDateStr}`;
+            // Return Hebrew date BEFORE Gregorian date
+            return `${hebrewDateStr} • ${gregorianStr}`;
         }
 
         // Live App Render Function
@@ -525,10 +536,11 @@
                 return;
             }
 
-            // Main Sunset Display
+            // Main Sunset & Times Display
             document.getElementById('sunsetTimeDisplay').textContent = formatTime(sunData.sunset);
             document.getElementById('sunriseTime').textContent = formatTime(sunData.sunrise);
             document.getElementById('noonTime').textContent = formatTime(sunData.solarNoon);
+            document.getElementById('minchaGedolaTime').textContent = formatTime(sunData.minchaGedola);
             document.getElementById('sunsetTimeSmall').textContent = formatTime(sunData.sunset);
 
             // Day length calculation
