@@ -196,39 +196,6 @@
                 </div>
             </div>
 
-            <div class="glass-panel rounded-2xl p-5 space-y-4">
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs sm:text-sm text-gray-300">
-                    <div class="flex items-center justify-center gap-1.5">
-                        <i data-lucide="sunrise" class="w-4 h-4 text-amber-300"></i>
-                        <span>זריחה: <strong id="sunriseTime" class="text-white font-mono">--:--</strong></span>
-                    </div>
-                    <div class="flex items-center justify-center gap-1.5">
-                        <i data-lucide="sun" class="w-4 h-4 text-amber-400"></i>
-                        <span>חצות: <strong id="noonTime" class="text-white font-mono">--:--</strong></span>
-                    </div>
-                    <div class="flex items-center justify-center gap-1.5">
-                        <i data-lucide="clock-4" class="w-4 h-4 text-orange-400"></i>
-                        <span>מנחה גדולה: <strong id="minchaGedolaTime" class="text-white font-mono">--:--</strong></span>
-                    </div>
-                    <div class="flex items-center justify-center gap-1.5">
-                        <i data-lucide="sunset" class="w-4 h-4 text-sunset-400"></i>
-                        <span>שקיעה: <strong id="sunsetTimeSmall" class="text-white font-mono">--:--</strong></span>
-                    </div>
-                </div>
-
-                <!-- Arc/Bar visual progress -->
-                <div class="space-y-1">
-                    <div class="relative w-full h-3 bg-white/10 rounded-full overflow-hidden">
-                        <div id="dayProgressBar" class="h-full bg-gradient-to-r from-amber-400 via-sunset-500 to-purple-600 rounded-full transition-all duration-1000" style="width: 0%;"></div>
-                    </div>
-                    <div class="flex justify-between text-xs text-gray-400 pt-1">
-                        <span>תחילת יום</span>
-                        <span id="dayProgressPercent" class="text-amber-300 font-medium">0% מיום האור חלף</span>
-                        <span>לילה</span>
-                    </div>
-                </div>
-            </div>
-
             <!-- Date Controller Panel -->
             <div class="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
@@ -419,67 +386,296 @@
         }
 
         /**
-         * Fetch Shabbat Candle Lighting and Parashat Hashavua from Hebcal API
+         * Clean Hebrew text from Nikkud (vowels) and trope marks
          */
-        async function fetchShabbatAndParasha(lat = currentLat, lng = currentLng) {
-            try {
-                // Candle lighting offset: 40 min for Jerusalem, 20 min elsewhere
-                const isJerusalem = Math.abs(lat - 31.7683) < 0.1 && Math.abs(lng - 35.2137) < 0.1;
-                const bOffset = isJerusalem ? 40 : 20;
-
-                const response = await fetch(`https://www.hebcal.com/shabbat?cfg=json&geo=pos&latitude=${lat}&longitude=${lng}&tzid=Asia/Jerusalem&lg=he&b=${bOffset}`);
-                if (!response.ok) throw new Error('Shabbat fetch failed');
-                const data = await response.json();
-
-                if (data && data.items) {
-                    let parashaName = '';
-                    let candleTimeStr = '';
-
-                    for (const item of data.items) {
-                        if (item.category === 'parashat') {
-                            parashaName = item.hebrew || item.title;
-                        }
-                        if (item.category === 'candles' && !candleTimeStr) {
-                            if (item.date) {
-                                const candleDate = new Date(item.date);
-                                candleTimeStr = formatTime(candleDate);
-                            }
-                        }
-                    }
-
-                    if (parashaName) {
-                        document.getElementById('parashaDisplay').textContent = parashaName.startsWith('פרשת') ? parashaName : `פרשת ${parashaName}`;
-                    }
-                    if (candleTimeStr) {
-                        document.getElementById('candleLightingTime').textContent = candleTimeStr;
-                    }
-                }
-            } catch (err) {
-                console.warn('Using local fallback for Shabbat info:', err);
-                
-                // Fallback local calculation for Friday Sunset minus offset
-                calculateShabbatFallback(lat, lng);
-            }
+        function cleanHebrewText(str) {
+            if (!str) return '';
+            return str.replace(/[\u0591-\u05C7]/g, '').trim();
         }
 
         /**
-         * Fallback local calculation for candle lighting time
+         * Offline Parashat Hashavua lookup table (2024-2027)
          */
-        function calculateShabbatFallback(lat, lng) {
-            const today = new Date();
-            const dayOfWeek = today.getDay(); // 0 = Sun, 5 = Fri
-            const daysUntilFriday = (5 - dayOfWeek + 7) % 7;
-            const nextFriday = new Date(today);
-            nextFriday.setDate(today.getDate() + daysUntilFriday);
+        function getLocalParashaLookup(isoDateStr) {
+            const parashotTable = {
+                // 5785 (2024-2025)
+                "2024-10-19": "שבת חול המועד סוכות",
+                "2024-10-26": "פרשת בראשית",
+                "2024-11-02": "פרשת נח",
+                "2024-11-09": "פרשת לך לך",
+                "2024-11-16": "פרשת וירא",
+                "2024-11-23": "פרשת חיי שרה",
+                "2024-11-30": "פרשת תולדות",
+                "2024-12-07": "פרשת ויצא",
+                "2024-12-14": "פרשת וישלח",
+                "2024-12-21": "פרשת וישב",
+                "2024-12-28": "פרשת מקץ",
+                "2025-01-04": "פרשת ויגש",
+                "2025-01-11": "פרשת ויחי",
+                "2025-01-18": "פרשת שמות",
+                "2025-01-25": "פרשת וארא",
+                "2025-02-01": "פרשת בא",
+                "2025-02-08": "פרשת בשלח",
+                "2025-02-15": "פרשת יתרו",
+                "2025-02-22": "פרשת משפטים",
+                "2025-03-01": "פרשת תרומה",
+                "2025-03-08": "פרשת תצווה",
+                "2025-03-15": "פרשת כי תשא",
+                "2025-03-22": "פרשת ויקהל-פקודי",
+                "2025-03-29": "פרשת ויקרא",
+                "2025-04-05": "פרשת צו",
+                "2025-04-12": "שבת חול המועד פסח",
+                "2025-04-19": "שביעי של פסח",
+                "2025-04-26": "פרשת שמיני",
+                "2025-05-03": "פרשת תזריע-מצורע",
+                "2025-05-10": "פרשת אחרי מות-קדושים",
+                "2025-05-17": "פרשת בהר-בחוקותי",
+                "2025-05-24": "פרשת במדבר",
+                "2025-05-31": "פרשת נשא",
+                "2025-06-07": "פרשת בהעלותך",
+                "2025-06-14": "פרשת שלח",
+                "2025-06-21": "פרשת קרח",
+                "2025-06-28": "פרשת חקת-בלק",
+                "2025-07-05": "פרשת פינחס",
+                "2025-07-12": "פרשת מטות-מסעי",
+                "2025-07-19": "פרשת דברים",
+                "2025-07-26": "פרשת ואתחנן",
+                "2025-08-02": "פרשת עקב",
+                "2025-08-09": "פרשת ראה",
+                "2025-08-16": "פרשת שופטים",
+                "2025-08-23": "פרשת כי תצא",
+                "2025-08-30": "פרשת כי תבוא",
+                "2025-09-06": "פרשת נצבים-וילך",
+                "2025-09-13": "פרשת האזינו",
+                "2025-09-20": "ראש השנה",
+                "2025-09-27": "שבת שובה",
+                "2025-10-04": "שבת חול המועד סוכות",
+                "2025-10-11": "שמיני עצרת",
+                "2025-10-18": "פרשת בראשית",
+                "2025-10-25": "פרשת נח",
+                "2025-11-01": "פרשת לך לך",
+                "2025-11-08": "פרשת וירא",
+                "2025-11-15": "פרשת חיי שרה",
+                "2025-11-22": "פרשת תולדות",
+                "2025-11-29": "פרשת ויצא",
+                "2025-12-06": "פרשת וישלח",
+                "2025-12-13": "פרשת וישב",
+                "2025-12-20": "פרשת מקץ",
+                "2025-12-27": "פרשת ויגש",
+                // 5786 (2026)
+                "2026-01-03": "פרשת ויחי",
+                "2026-01-10": "פרשת שמות",
+                "2026-01-17": "פרשת וארא",
+                "2026-01-24": "פרשת בא",
+                "2026-01-31": "פרשת בשלח",
+                "2026-02-07": "פרשת יתרו",
+                "2026-02-14": "פרשת משפטים",
+                "2026-02-21": "פרשת תרומה",
+                "2026-02-28": "פרשת תצווה",
+                "2026-03-07": "פרשת כי תשא",
+                "2026-03-14": "פרשת ויקהל-פקודי",
+                "2026-03-21": "פרשת ויקרא",
+                "2026-03-28": "פרשת צו",
+                "2026-04-04": "שבת חול המועד פסח",
+                "2026-04-11": "פרשת שמיני",
+                "2026-04-18": "פרשת תזריע-מצורע",
+                "2026-04-25": "פרשת אחרי מות-קדושים",
+                "2026-05-02": "פרשת בהר-בחוקותי",
+                "2026-05-09": "פרשת במדבר",
+                "2026-05-16": "פרשת נשא",
+                "2026-05-23": "שבועות",
+                "2026-05-30": "פרשת בהעלותך",
+                "2026-06-06": "פרשת שלח",
+                "2026-06-13": "פרשת קרח",
+                "2026-06-20": "פרשת חקת",
+                "2026-06-27": "פרשת בלק",
+                "2026-07-04": "פרשת פינחס",
+                "2026-07-11": "פרשת מטות-מסעי",
+                "2026-07-18": "פרשת דברים",
+                "2026-07-25": "פרשת ואתחנן",
+                "2026-08-01": "פרשת עקב",
+                "2026-08-08": "פרשת ראה",
+                "2026-08-15": "פרשת שופטים",
+                "2026-08-22": "פרשת כי תצא",
+                "2026-08-29": "פרשת כי תבוא",
+                "2026-09-05": "פרשת נצבים",
+                "2026-09-12": "פרשת וילך",
+                "2026-09-19": "פרשת האזינו",
+                "2026-09-26": "שבת חול המועד סוכות",
+                "2026-10-03": "שמיני עצרת",
+                "2026-10-10": "פרשת בראשית",
+                "2026-10-17": "פרשת נח",
+                "2026-10-24": "פרשת לך לך",
+                "2026-10-31": "פרשת וירא",
+                "2026-11-07": "פרשת חיי שרה",
+                "2026-11-14": "פרשת תולדות",
+                "2026-11-21": "פרשת ויצא",
+                "2026-11-28": "פרשת וישלח",
+                "2026-12-05": "פרשת וישב",
+                "2026-12-12": "פרשת מקץ",
+                "2026-12-19": "פרשת ויגש",
+                "2026-12-26": "פרשת ויחי",
+                // 5787 (2027)
+                "2027-01-02": "פרשת שמות",
+                "2027-01-09": "פרשת וארא",
+                "2027-01-16": "פרשת בא",
+                "2027-01-23": "פרשת בשלח",
+                "2027-01-30": "פרשת יתרו",
+                "2027-02-06": "פרשת משפטים",
+                "2027-02-13": "פרשת תרומה",
+                "2027-02-20": "פרשת תצווה",
+                "2027-02-27": "פרשת כי תשא",
+                "2027-03-06": "פרשת ויקהל",
+                "2027-03-13": "פרשת פקודי",
+                "2027-03-20": "פרשת ויקרא",
+                "2027-03-27": "פרשת צו",
+                "2027-04-03": "שבת חול המועד פסח",
+                "2027-04-10": "פרשת שמיני",
+                "2027-04-17": "פרשת תזריע",
+                "2027-04-24": "פרשת מצורע",
+                "2027-05-01": "פרשת אחרי מות",
+                "2027-05-08": "פרשת קדושים",
+                "2027-05-15": "פרשת בהר",
+                "2027-05-22": "פרשת בחוקותי",
+                "2027-05-29": "פרשת במדבר",
+                "2027-06-05": "פרשת נשא",
+                "2027-06-12": "פרשת בהעלותך",
+                "2027-06-19": "פרשת שלח",
+                "2027-06-26": "פרשת קרח",
+                "2027-07-03": "פרשת חקת",
+                "2027-07-10": "פרשת בלק",
+                "2027-07-17": "פרשת פינחס",
+                "2027-07-24": "פרשת מטות",
+                "2027-07-31": "פרשת מסעי",
+                "2027-08-07": "פרשת דברים",
+                "2027-08-14": "פרשת ואתחנן",
+                "2027-08-21": "פרשת עקב",
+                "2027-08-28": "פרשת ראה",
+                "2027-09-04": "פרשת שופטים",
+                "2027-09-11": "פרשת כי תצא",
+                "2027-09-18": "פרשת כי תבוא",
+                "2027-09-25": "פרשת נצבים-וילך"
+            };
 
-            const sunData = calculateSunTimes(nextFriday, lat, lng);
+            return parashotTable[isoDateStr] || "פרשת השבוע";
+        }
+
+        /**
+         * Get upcoming Friday and Saturday relative to a given date
+         */
+        function getUpcomingShabbatDates(baseDate) {
+            const d = new Date(baseDate);
+            const day = d.getDay(); // 0 = Sun, 5 = Fri, 6 = Sat
+            
+            // If it's Saturday (6), target next Friday (+6 days) for the upcoming week
+            const daysToFriday = (day === 6) ? 6 : (5 - day + 7) % 7;
+            
+            const friday = new Date(d);
+            friday.setDate(d.getDate() + daysToFriday);
+            
+            const saturday = new Date(friday);
+            saturday.setDate(friday.getDate() + 1);
+            
+            return { friday, saturday };
+        }
+
+        /**
+         * Fetch Shabbat Candle Lighting and Parashat Hashavua from Hebcal API with Fallbacks
+         */
+        async function fetchShabbatAndParasha(lat = currentLat, lng = currentLng, date = selectedDate) {
+            const parashaEl = document.getElementById('parashaDisplay');
+            const candleEl = document.getElementById('candleLightingTime');
+
+            const isJerusalem = Math.abs(lat - 31.7683) < 0.1 && Math.abs(lng - 35.2137) < 0.1;
+            const bOffset = isJerusalem ? 40 : 20;
+
+            const { friday, saturday } = getUpcomingShabbatDates(date);
+            const gy = friday.getFullYear();
+            const gm = friday.getMonth() + 1;
+            const gd = friday.getDate();
+
+            let data = null;
+
+            // Primary Fetch targeting specific Friday/Saturday date
+            try {
+                const response = await fetch(`https://www.hebcal.com/shabbat?cfg=json&gy=${gy}&gm=${gm}&gd=${gd}&geo=pos&latitude=${lat}&longitude=${lng}&tzid=Asia/Jerusalem&lg=he&b=${bOffset}`);
+                if (response.ok) {
+                    data = await response.json();
+                }
+            } catch (err) {
+                console.warn('Primary Shabbat fetch failed, trying fallback:', err);
+            }
+
+            // Secondary Fetch (Jerusalem Geoname ID fallback)
+            if (!data) {
+                try {
+                    const response = await fetch(`https://www.hebcal.com/shabbat?cfg=json&gy=${gy}&gm=${gm}&gd=${gd}&geonameid=281184&lg=he&b=${bOffset}`);
+                    if (response.ok) {
+                        data = await response.json();
+                    }
+                } catch (err) {
+                    console.warn('Geonameid Shabbat fetch failed:', err);
+                }
+            }
+
+            if (data && data.items && data.items.length > 0) {
+                let parashaName = '';
+                let holidayName = '';
+                let candleTimeStr = '';
+
+                for (const item of data.items) {
+                    if (item.category === 'parashat') {
+                        parashaName = cleanHebrewText(item.hebrew || item.title);
+                    } else if (item.category === 'holiday' && !holidayName) {
+                        if (item.hebrew) holidayName = cleanHebrewText(item.hebrew);
+                    }
+                    if (item.category === 'candles' && !candleTimeStr && item.date) {
+                        const candleDate = new Date(item.date);
+                        candleTimeStr = formatTime(candleDate);
+                    }
+                }
+
+                const finalParasha = parashaName || holidayName;
+                if (finalParasha) {
+                    if (finalParasha.startsWith('פרשת') || finalParasha.startsWith('שבת') || finalParasha.startsWith('חג')) {
+                        parashaEl.textContent = finalParasha;
+                    } else {
+                        parashaEl.textContent = `פרשת ${finalParasha}`;
+                    }
+                }
+                
+                if (candleTimeStr) {
+                    candleEl.textContent = candleTimeStr;
+                    return; // Successfully set
+                }
+            }
+
+            // Fallback to local offline calculation
+            calculateShabbatFallback(lat, lng, date);
+        }
+
+        /**
+         * Fallback local calculation for candle lighting time and Parasha lookup
+         */
+        function calculateShabbatFallback(lat, lng, date = selectedDate) {
+            const { friday, saturday } = getUpcomingShabbatDates(date);
+
+            const sunData = calculateSunTimes(friday, lat, lng);
             if (sunData && sunData.sunset) {
                 const isJerusalem = Math.abs(lat - 31.7683) < 0.1 && Math.abs(lng - 35.2137) < 0.1;
                 const candleOffsetMs = (isJerusalem ? 40 : 20) * 60 * 1000;
                 const candleDate = new Date(sunData.sunset.getTime() - candleOffsetMs);
                 document.getElementById('candleLightingTime').textContent = formatTime(candleDate);
             }
-            document.getElementById('parashaDisplay').textContent = 'פרשת השבוע';
+
+            // Offline Parasha lookup by Shabbat ISO date (YYYY-MM-DD)
+            const yyyy = saturday.getFullYear();
+            const mm = String(saturday.getMonth() + 1).padStart(2, '0');
+            const dd = String(saturday.getDate()).padStart(2, '0');
+            const shabbatIso = `${yyyy}-${mm}-${dd}`;
+            
+            const localParasha = getLocalParashaLookup(shabbatIso);
+            document.getElementById('parashaDisplay').textContent = localParasha;
         }
 
         /**
@@ -648,12 +844,6 @@
             document.getElementById('minchaHeroDisplay').textContent = formatTime(sunData.minchaGedola);
             document.getElementById('sunsetHeroDisplay').textContent = formatTime(sunData.sunset);
 
-            // Small Table Times Display
-            document.getElementById('sunriseTime').textContent = formatTime(sunData.sunrise);
-            document.getElementById('noonTime').textContent = formatTime(sunData.solarNoon);
-            document.getElementById('minchaGedolaTime').textContent = formatTime(sunData.minchaGedola);
-            document.getElementById('sunsetTimeSmall').textContent = formatTime(sunData.sunset);
-
             // Day length calculation
             if (sunData.sunrise && sunData.sunset) {
                 const diffMs = sunData.sunset - sunData.sunrise;
@@ -700,22 +890,11 @@
                     statusText.textContent = `השקיעה הייתה לפני ${hours > 0 ? hours + ' שעות ו-' : ''}${minutes} דקות`;
                     statusBadge.className = "inline-flex items-center gap-2 px-5 py-2 rounded-2xl bg-purple-900/30 border border-purple-500/30 text-purple-200 text-sm sm:text-base font-medium";
                 }
-
-                // Progress bar calculation
-                if (sunData.sunrise && sunData.sunset) {
-                    const totalDayMs = sunData.sunset - sunData.sunrise;
-                    const elapsedMs = now - sunData.sunrise;
-                    let percent = Math.min(100, Math.max(0, (elapsedMs / totalDayMs) * 100));
-                    document.getElementById('dayProgressBar').style.width = `${percent.toFixed(1)}%`;
-                    document.getElementById('dayProgressPercent').textContent = `${percent.toFixed(0)}% מיום האור חלף`;
-                }
             } else {
                 // Different Date selected
                 const isFuture = selectedDate > now;
                 statusText.textContent = isFuture ? 'זמן עתידי' : 'זמן עבור תאריך שעבר';
                 statusBadge.className = "inline-flex items-center gap-2 px-5 py-2 rounded-2xl bg-white/5 border border-white/10 text-gray-300 text-sm sm:text-base font-medium";
-                document.getElementById('dayProgressBar').style.width = '0%';
-                document.getElementById('dayProgressPercent').textContent = 'תאריך נבחר';
             }
         }
 
@@ -762,16 +941,19 @@
         document.getElementById('btnToday').addEventListener('click', () => {
             selectedDate = new Date();
             updateDisplay();
+            fetchShabbatAndParasha(currentLat, currentLng, selectedDate);
         });
 
         document.getElementById('btnYesterday').addEventListener('click', () => {
             selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() - 1));
             updateDisplay();
+            fetchShabbatAndParasha(currentLat, currentLng, selectedDate);
         });
 
         document.getElementById('btnTomorrow').addEventListener('click', () => {
             selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() + 1));
             updateDisplay();
+            fetchShabbatAndParasha(currentLat, currentLng, selectedDate);
         });
 
         document.getElementById('datePicker').addEventListener('change', (e) => {
@@ -779,6 +961,7 @@
                 const parts = e.target.value.split('-');
                 selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
                 updateDisplay();
+                fetchShabbatAndParasha(currentLat, currentLng, selectedDate);
             }
         });
 
@@ -834,7 +1017,7 @@
             initCanvasAnimation();
             updateDisplay();
             fetchWeather(currentLat, currentLng);
-            fetchShabbatAndParasha(currentLat, currentLng);
+            fetchShabbatAndParasha(currentLat, currentLng, selectedDate);
 
             // Real-time update ticker every second
             setInterval(updateDisplay, 1000);
